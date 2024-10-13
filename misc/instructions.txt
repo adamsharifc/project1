@@ -1,0 +1,100 @@
+// PROJECT 1: FILE TRANSPORT PROTOCOL
+// Author: Adam Sharif
+// Date: 11-10-2024
+
+// TASKS
+// 1. The FTP server is responsible for
+//   - Maintaining FTP sessions
+//   - Providing file access
+//   - FTP server must be started first and must support concurrent connections
+//   - i.e be able to handle multiple simultaneous requests from different OR THE SAME clients
+//   - This can be done using select() and fork()
+//   - For just control connection, select() is sufficient
+//   - If you dont use select(), and with fork(), for data transfer, there will be a PENALTY as this is inefficient
+//   - Look up RFC 959
+// 2. In a Nutshell
+//   - In constrast to other protocols, FTP has different connections for data and control.
+//   - A separate connection for file transfer and directory listing.
+//   - An FTP client connects from a RANDOM UNPRIVILEGED PORT to the server on port 21.
+//   - Server on port 21 is the control channel.
+//   - For each data transfer initiated by the client
+//      - The client sends the PORT N+1 command to the server.
+//      - This specifies the client-side port that the server should connect to for the data transfer.
+//      - The CLIENT then LISTENS to port N+1 for the data transfer.
+//      - The SERVER then connects from port 20 to the client port to establish the data channel.
+//      - Once the TCP connection is established, the data transfer begins.
+//      - The end of the data transfer must be indicated by closing the data chaneel.
+//      - Therefore, for every data transfer, the above steps are repeated.
+//      - But with N+2, N+3, N+4, etc. ports. UNTIL ports can be reused.
+
+// 3. COMMANDS
+//     - PORT h1, h2, h3, h4, p1, p2
+//         - Specifies the client IP address and port number for the data channel.
+//         - Sent automatically by client BEFORE sending a RETR, STOR, LIST command.
+//         - Server MUST reply with `200 PORT command successful`, BEFORE starting the data transfer.
+//         - The argument is a 32-bit internet host address and a 16-bit TCP port address.
+//         - This address information is broken into 8-but fields and the values of each field by commas
+//         - h1 is the high order 8 bits of the internet client address.
+//         - p1 is the high order 8 bits of the client port.
+
+//     - USER username
+//         - Identifies which user is trying to login to the FTP server.
+//         - Mainly used for authentication.
+//         - Once the client issues a USER command, and the server exists, the server must reply with `331 Username OK, need password`. else `530 Not logged in`.
+
+//     - PASS password
+//         - Used to authenticate the user password by issuing a PASS command followed by the user password. 
+//         - The server must reply with either
+//             - `230 User logged in, proceed` if the password is correct.
+//             - `530 Not logged in` if the password is incorrect.
+//         - The user names and passwords should be saved locally in a file called user.txt and should be read by the server program launch.
+
+//     - STOR filename
+//         - This command is used to upload a local file named `filename`from the client directory to the server directory.
+
+//     - RETR filename
+//         - This command is used to download file named `filename` from the server directory to the client directory.
+
+//     - LIST
+//         - This command is used to list all the files under the current server directory
+     
+//     - !LIST
+//         - This command is used to list all the files under the current client directory
+
+//     - CWD foldername
+//         - This command is used to change the current server directory to `foldername`. The server must reply with `200 direcotry changed to pathname/foldername`
+
+//     - !CWD foldername
+//         - This command is used to change the current client directory.
+
+//     - PWD
+//         - This command displays the current server directory. The server must reply with `257 pathname`
+
+//     - !PWD
+//         - This command displays the current client directory.
+
+//     - QUIT
+//         - This command quits the FTP session and closes the control TCP connection. The server must reply with `221 Service closing control connection`, and the client must terminate after receiving the reply. If this command is issued during an ONGOING DATA TRANSFER, the server/client must abort the data transfer.
+
+// 4. NOTES
+//     - RETR, STOR, LIST commands trigger a data transfer between the client and the server. That is, the server replies with `150 File status okay; about to open data connection` and opens a new TCP data connection to transfer the data. In the control connection wit the server creates the scoket (on port 21) to which the client binds to open the connections with the server.
+//     - In case of data transfer, the clients create the sockets on port no: PORT N + 1 (port N is the client side port that is used before to connect to the server.). 
+//     - Server connects from port 20 to the client port received (N + i) with the PORT commands and starts transferring the data (RETR and LIST) or waits to receive a file (STOR).
+//         - If the transferred file already exists, it is replaced.
+//     - Implementation will use stream transfer mode of FTP. The end of the file will be indicated by closing the data channel.
+//         - That is, the sender (server for RETR command, client for STOR command) closes the data connection when the file is completely transferred.
+//         - Server must send a `226 Transfer completed`
+//         - MODE is INHERENTLY UNRELIABLE, since client cannot determine if the connection closed prematurely or not.
+//     - A session must be RESET if the client disconnects.
+//     - Also, since the server must support concurrent file transfer of multiple connected clients, and since a copy of the same file can could be sent to the same client. It is recommended to create a temporary file rand#.tmp
+//     - Any command other than the ones mentioned above should be considered invalid and the server must reply with `202 Command not implemented`.
+//     - The authentication process consists of both a USER command and a PASS command. No other command should be accepted by the server if the user has not successfully authenticated itself and should result in a `530 Not logged in` reply.
+//     - If the user requests an invalid filename or if the directory the user is trying to navigate to does not exist, the client/server must respond with a `550 No such file or directory` reply.
+//     - If the user issues commands in an invalid sequence, the server must respond with a `503 Bad sequence of commands` reply.
+//     - DONT need to do extensive error checking for the commands e.g. username or filename containing whitespace, escape characters, etc.
+
+// 5. PORT COMMAND
+
+//    - PORT h1, h2, h3, h4, p1, p2
+//    - Sent automatically by client BEFORE sending a RETR, STOR, LIST command.
+//    - 

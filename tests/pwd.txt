@@ -1,0 +1,5 @@
+USER bob
+PASS donuts
+PWD
+!PWD
+QUIT

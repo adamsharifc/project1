@@ -1,0 +1,9 @@
+USER bob
+PASS donuts
+PWD
+CWD bob
+PWD
+!PWD
+!CWD test
+!PWD
+QUIT

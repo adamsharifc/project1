@@ -1,0 +1,7 @@
+USER bob
+PASS donuts
+PWD
+CWD bob/images
+LIST
+RETR slytherin.jpg
+QUIT

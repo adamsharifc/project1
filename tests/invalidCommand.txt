@@ -1,0 +1,4 @@
+USER bob
+PASS donuts
+INVALID_COMMAND 
+QUIT

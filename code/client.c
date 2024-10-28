@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
     int test_command_index = 0;
     while(true){
 
-        // if test mode is enabled, run the test script
+        // if test mode is enabled, iterate through test_commands array, instead of taking user input
         if (is_test_mode == true){
             if (test_commands[test_command_index] == NULL){
                 printf("End of test script\n");
@@ -281,6 +281,7 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
                 printf("%s", buffer); // Print the received data
                 memset(buffer, 0, MAX_BUFFER);          // clear buffer
             }
+            fflush(stdout);     // force flush to stdout, to avoid inconsistency in printing order when there are tests where fast iteration thorugh commands may cause problems
             if (bytes_received < 0) {
                 printf("Error: Failed to receive data from server\n");
             }
@@ -321,6 +322,7 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
     else {    // parent process
         // does NOT WAIT for the child process to finish
         // as this will PREVENT the server from accepting new connections
+        
     }
 }
 
@@ -420,6 +422,5 @@ void handle_test_mode(char *test_commands[], char *file_path) {
         line_count++;
     }
 
-    // Close the file
     fclose(file);
 }

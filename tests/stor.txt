@@ -1,0 +1,6 @@
+USER bob
+PASS donuts
+!PWD
+CWD bob
+STOR friends.pdf
+QUIT

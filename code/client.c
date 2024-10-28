@@ -63,7 +63,7 @@ int main() {
 
     while(true){
         
-        input("", command);
+        input("ftp> ", command);
         if (strlen(command) == 0){continue;}
 
         strncpy(buffer, command, MAX_BUFFER);
@@ -149,6 +149,11 @@ void request_port_command(int control_socket, int control_port, int client_pluso
             printf("Error: Failed to create socket\n");
             exit(1);
         }
+
+        // Set SO_REUSEADDR option to reuse the port
+        int opt = 1;
+        setsockopt(client_data_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
         
         // Set up client address
         data_client_address.sin_family = AF_INET;
@@ -357,6 +362,11 @@ void handle_port_command(int control_socket, int control_port, int data_port_cou
             printf("Error: Failed to create socket\n");
             exit(1);
         }
+
+        // Set SO_REUSEADDR option to reuse the port
+        int opt = 1;
+        setsockopt(client_data_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
         
         // Set up client address
         data_client_address.sin_family = AF_INET;

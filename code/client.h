@@ -11,4 +11,6 @@
 int init(); 
 void input(char* prompt, char* input);
 int send_port_command(char host_address[], int tcp_port_address, int control_socket);
+void request_port_command(int control_socket, int control_port, int client_plusone, char operation[], char operand[]);
+int send_underlying_command(int control_socket, char operation[], char operand[]);
 #endif // CLIENT_H

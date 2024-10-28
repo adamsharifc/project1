@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include "server.h"
 
 user users[MAX_CLIENTS];
@@ -180,18 +181,60 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         }
     }
     else if (strcmp(operation, "PWD") == 0){
-        getcwd(buffer, MAX_BUFFER);
+        // getcwd(buffer, MAX_BUFFER);
+        // send(client_socket, buffer, strlen(buffer), 0);
+        // Added changes
+
+        snprintf(buffer, MAX_BUFFER, "%s", conn->current_directory);
         send(client_socket, buffer, strlen(buffer), 0);
     }
     else if (strcmp(operation, "CWD") == 0){
-        if (sys_cwd(operand) == 0){
-            getcwd(buffer, MAX_BUFFER);
-            send(client_socket, buffer, strlen(buffer), 0);
-        }
-        else {
+        // if (sys_cwd(operand) == 0){
+        //     getcwd(buffer, MAX_BUFFER);
+        //     send(client_socket, buffer, strlen(buffer), 0);
+        // }
+        // else {
+        //     send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
+        // }
+        // Added changes 
+        char temp_directory[MAX_BUFFER];
+        struct stat directory_info;
+
+        // Create a new path based on the client's current directory and the operand provided
+        snprintf(temp_directory, MAX_BUFFER, "%s/%s", conn->current_directory, operand);
+
+        // Check if the directory exists using stat instead of chdir
+        if (stat(temp_directory, &directory_info) == 0 && S_ISDIR(directory_info.st_mode)) {
+            // If it exists and is a directory, update the client's current directory
+            realpath(temp_directory, conn->current_directory); // Normalize the path
+            snprintf(buffer, MAX_BUFFER, "200 Directory changed to %s", conn->current_directory);
+            send(client_socket, buffer, strlen(buffer), 0);  // Send confirmation to the client
+        } else {
+            // Send an error if the directory does not exist
             send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
         }
     }
+    // else if (strcmp(operation, "LIST") == 0) {
+    //     char list_command[MAX_BUFFER];
+    //     char line[MAX_BUFFER];
+
+    //     // Construct the ls command for the client's current directory
+    //     snprintf(list_command, MAX_BUFFER, "ls %s", conn->current_directory);
+        
+    //     FILE *fp = popen(list_command, "r");
+    //     if (fp == NULL) {
+    //         perror("Error: Failed to open command");
+    //         snprintf(buffer, MAX_BUFFER, "550 Failed to list directory.\n");
+    //         send(client_socket, buffer, strlen(buffer), 0);
+    //         return;
+    //     }
+
+    //     // Send each line of the command output back to the client
+    //     while (fgets(line, sizeof(line), fp) != NULL) {
+    //         send(client_socket, line, strlen(line), 0);
+    //     }
+    //     pclose(fp);
+    // }
     else if (strcmp(operation, "QUIT") == 0){
         send(client_socket, SERVICE_QUIT, strlen(SERVICE_QUIT), 0);
         printf("Closed %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
@@ -206,14 +249,14 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
     }
     else if (strcmp(operation, "PORT") == 0){
         // handle_port_command(client_socket, client_addr, operand);
-        serve_port_command(client_socket, client_addr, operand);
+        serve_port_command(client_socket, client_addr, conn, operand);
     }
     else {
         send(client_socket, INVALID_COMMAND, strlen(INVALID_COMMAND), 0);
     }     
 }
 
-int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* operand){
+int serve_port_command(int client_socket, struct sockaddr_in client_addr, connection* conn, char* operand){
     
     // server reads the port requst and extracts the client_plusone port for data transfer
     int client_plusone = unsplit_port(operand);
@@ -284,27 +327,49 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
         char buffer[MAX_BUFFER];
         memset(buffer, 0, MAX_BUFFER);
         if (strcmp(underlying_operation, "LIST") == 0){
-            FILE *fp;
-            char line[MAX_BUFFER];
-            buffer[0] = '\0';
+            // FILE *fp;
+            // char line[MAX_BUFFER];
+            // buffer[0] = '\0';
 
-            // Open the command for reading
-            fp = popen("ls", "r");
+            // // Open the command for reading
+            // fp = popen("ls", "r");
+            // if (fp == NULL) {
+            //     perror("Error: Failed to open command");
+            //     exit(1);
+            // }
+
+            // // Read the output a line at a time and send it to the client
+            // while (fgets(line, sizeof(line), fp) != NULL) {
+            //     send(data_socket, line, strlen(line), 0);
+            // }          
+
+            // // Close the file pointer
+            // pclose(fp);
+            // exit(0);
+            char list_command[MAX_BUFFER];
+            char line[MAX_BUFFER];
+
+            // Construct the ls command for the client's current directory
+            snprintf(list_command, MAX_BUFFER, "ls %s", conn->current_directory);
+            
+            FILE *fp = popen(list_command, "r");
             if (fp == NULL) {
                 perror("Error: Failed to open command");
-                exit(1);
+                snprintf(buffer, MAX_BUFFER, "550 Failed to list directory.\n");
+                send(client_socket, buffer, strlen(buffer), 0);
+                return -1;
             }
 
-            // Read the output a line at a time and send it to the client
+            // Send each line of the command output back to the client
             while (fgets(line, sizeof(line), fp) != NULL) {
-                send(data_socket, line, strlen(line), 0);
-            }          
-
-            // Close the file pointer
+                send(client_socket, line, strlen(line), 0);
+            }
             pclose(fp);
-            exit(0);
+
+            close(data_socket); // Close the data socket after LIST operation
+            exit(0); 
         }
-        else if (strcmp(underlying_operation, "RETR") == 0){
+         if (strcmp(underlying_operation, "RETR") == 0){
             // open file as specified in operand and send to client
 
             FILE *file = fopen(underlying_operand, "rb");   // read in binary mode
@@ -321,6 +386,7 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
             }
 
             fclose(file);
+            close(data_socket);
             exit(0);
 
         }
@@ -339,6 +405,7 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
             }
 
             fclose(file);
+            close(data_socket);
             exit(0);
         }
 
@@ -428,6 +495,7 @@ void init_connections(connection connections[], int num_connections){
         connections[i].is_logged_in = false;
         connections[i].is_transfering = false;
         connections[i].username[0] = '\0';
+        strcpy(connections[i].current_directory, "../server"); //Added changes: Start each client in the root directory
     }
 }
 void print_connections(connection connections[], int num_connections){

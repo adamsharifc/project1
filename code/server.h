@@ -14,6 +14,7 @@ struct connection {
     char username[100];
     bool is_logged_in;
     bool is_transfering;
+    char current_directory[MAX_BUFFER]; //Added changes:  New field for each client's working directory
 } typedef connection;
 
 struct user {
@@ -30,5 +31,6 @@ void capture_ls_output(char *buffer, size_t buffer_size);
 void init_connections(connection connections[], int num_connections);
 void print_connections(connection connections[], int num_connections);
 int unsplit_port(char operand[]);
+int serve_port_command(int client_socket, struct sockaddr_in client_addr, connection* conn, char* operand);
 
 #endif // SERVER_H

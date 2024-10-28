@@ -1,10 +1,13 @@
-#include <sys/stat.h>
+// PROJECT 1: FILE TRANSPORT PROTOCOL (SERVER)
+// Author: Adam Sharif
+// Date: 11-10-2024
 #include "server.h"
 
 user users[MAX_CLIENTS];
 connection connections[MAX_CLIENTS];
 int user_count;
 int connection_count;
+char BASE_DIRECTORY[MAX_BUFFER];
 
 int main() {
     
@@ -18,6 +21,10 @@ int main() {
     char buffer[MAX_BUFFER];
     fd_set readfds;
 
+    // set base directory for server
+    getcwd(BASE_DIRECTORY, sizeof(BASE_DIRECTORY));
+
+    // Load users from CSV file
     user_count = load_users("../users.csv", users);
 
     connection connections[MAX_CLIENTS];
@@ -94,11 +101,11 @@ int main() {
                     connections[i].socket_descriptor = new_socket;
                     connections[i].port = ntohs(client_addr.sin_port);
                     connections[i].user_number = connection_instances_count + 1;
+                    strcpy(connections[i].working_directory, BASE_DIRECTORY);   // set working directory to base directory
                     connection_instances_count++;
                     break;
                 }
             }
-            print_connections(connections, MAX_CLIENTS);
         }
 
         // Check all client sockets for incoming data
@@ -120,7 +127,6 @@ int main() {
                     buffer[valread] = '\0';
                     // printf("%d: %s\n", connections[i].port, buffer);
                     handle_client(socket_descriptor, client_addr, &connections[i], buffer);
-                    print_connections(connections, MAX_CLIENTS);
                     // send(socket_descriptor, buffer, strlen(buffer), 0);
                 }
             }
@@ -161,6 +167,22 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         send(client_socket, USER_FAIL, strlen(USER_FAIL), 0); return;
     }
 
+    // BEYOND HERE, IF THE COMMAND ISNT USER OR PASS, THE USER SHOULD BE ABLE TO ACCESS AND WORK WITH THE CORRECT WORKING DIRECTORY
+    if (conn->is_logged_in && strcmp(operation, "USER") != 0 && strcmp(operation, "PASS") != 0){
+        // check if the server is in the correct working directory to serve the client
+        if (is_correct_working_directory(conn->working_directory) == false){
+            printf("%s should be in %s\n", conn->username, conn->working_directory); fflush(stdout);
+            // change to correct working directory
+            if (sys_cwd(conn->working_directory) == 0){     // if working directory is changed successfully, see implementation in common.c
+                getcwd(buffer, MAX_BUFFER);     // copy current working directory to buffer
+                strcpy(conn->working_directory, buffer);    // copy buffer to connection working directory
+            }
+            else {
+                send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
+            }
+        }
+    }
+
     // AUTHENTICATED COMMANDS
     if (strcmp(operation, "USER") == 0){            
         if (user_exists(operand, users, user_count)){
@@ -181,60 +203,19 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         }
     }
     else if (strcmp(operation, "PWD") == 0){
-        // getcwd(buffer, MAX_BUFFER);
-        // send(client_socket, buffer, strlen(buffer), 0);
-        // Added changes
-
-        snprintf(buffer, MAX_BUFFER, "%s", conn->current_directory);
+        getcwd(buffer, MAX_BUFFER);     // get current working directory not to be confused with CWD (Change Working Directory)
         send(client_socket, buffer, strlen(buffer), 0);
     }
     else if (strcmp(operation, "CWD") == 0){
-        // if (sys_cwd(operand) == 0){
-        //     getcwd(buffer, MAX_BUFFER);
-        //     send(client_socket, buffer, strlen(buffer), 0);
-        // }
-        // else {
-        //     send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
-        // }
-        // Added changes 
-        char temp_directory[MAX_BUFFER];
-        struct stat directory_info;
-
-        // Create a new path based on the client's current directory and the operand provided
-        snprintf(temp_directory, MAX_BUFFER, "%s/%s", conn->current_directory, operand);
-
-        // Check if the directory exists using stat instead of chdir
-        if (stat(temp_directory, &directory_info) == 0 && S_ISDIR(directory_info.st_mode)) {
-            // If it exists and is a directory, update the client's current directory
-            realpath(temp_directory, conn->current_directory); // Normalize the path
-            snprintf(buffer, MAX_BUFFER, "200 Directory changed to %s", conn->current_directory);
-            send(client_socket, buffer, strlen(buffer), 0);  // Send confirmation to the client
-        } else {
-            // Send an error if the directory does not exist
+        if (sys_cwd(operand) == 0){     // if working directory is changed successfully, see implementation in common.c
+            getcwd(buffer, MAX_BUFFER);     // copy current working directory to buffer
+            strcpy(conn->working_directory, buffer);    // copy buffer to connection working directory
+            send(client_socket, buffer, strlen(buffer), 0);
+        }
+        else {
             send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
         }
     }
-    // else if (strcmp(operation, "LIST") == 0) {
-    //     char list_command[MAX_BUFFER];
-    //     char line[MAX_BUFFER];
-
-    //     // Construct the ls command for the client's current directory
-    //     snprintf(list_command, MAX_BUFFER, "ls %s", conn->current_directory);
-        
-    //     FILE *fp = popen(list_command, "r");
-    //     if (fp == NULL) {
-    //         perror("Error: Failed to open command");
-    //         snprintf(buffer, MAX_BUFFER, "550 Failed to list directory.\n");
-    //         send(client_socket, buffer, strlen(buffer), 0);
-    //         return;
-    //     }
-
-    //     // Send each line of the command output back to the client
-    //     while (fgets(line, sizeof(line), fp) != NULL) {
-    //         send(client_socket, line, strlen(line), 0);
-    //     }
-    //     pclose(fp);
-    // }
     else if (strcmp(operation, "QUIT") == 0){
         send(client_socket, SERVICE_QUIT, strlen(SERVICE_QUIT), 0);
         printf("Closed %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
@@ -249,14 +230,14 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
     }
     else if (strcmp(operation, "PORT") == 0){
         // handle_port_command(client_socket, client_addr, operand);
-        serve_port_command(client_socket, client_addr, conn, operand);
+        serve_port_command(client_socket, client_addr, operand);
     }
     else {
         send(client_socket, INVALID_COMMAND, strlen(INVALID_COMMAND), 0);
     }     
 }
 
-int serve_port_command(int client_socket, struct sockaddr_in client_addr, connection* conn, char* operand){
+int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* operand){
     
     // server reads the port requst and extracts the client_plusone port for data transfer
     int client_plusone = unsplit_port(operand);
@@ -327,49 +308,27 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, connec
         char buffer[MAX_BUFFER];
         memset(buffer, 0, MAX_BUFFER);
         if (strcmp(underlying_operation, "LIST") == 0){
-            // FILE *fp;
-            // char line[MAX_BUFFER];
-            // buffer[0] = '\0';
-
-            // // Open the command for reading
-            // fp = popen("ls", "r");
-            // if (fp == NULL) {
-            //     perror("Error: Failed to open command");
-            //     exit(1);
-            // }
-
-            // // Read the output a line at a time and send it to the client
-            // while (fgets(line, sizeof(line), fp) != NULL) {
-            //     send(data_socket, line, strlen(line), 0);
-            // }          
-
-            // // Close the file pointer
-            // pclose(fp);
-            // exit(0);
-            char list_command[MAX_BUFFER];
+            FILE *fp;
             char line[MAX_BUFFER];
+            buffer[0] = '\0';
 
-            // Construct the ls command for the client's current directory
-            snprintf(list_command, MAX_BUFFER, "ls %s", conn->current_directory);
-            
-            FILE *fp = popen(list_command, "r");
+            // Open the command for reading
+            fp = popen("ls", "r");
             if (fp == NULL) {
                 perror("Error: Failed to open command");
-                snprintf(buffer, MAX_BUFFER, "550 Failed to list directory.\n");
-                send(client_socket, buffer, strlen(buffer), 0);
-                return -1;
+                exit(1);
             }
 
-            // Send each line of the command output back to the client
+            // Read the output a line at a time and send it to the client
             while (fgets(line, sizeof(line), fp) != NULL) {
-                send(client_socket, line, strlen(line), 0);
-            }
-            pclose(fp);
+                send(data_socket, line, strlen(line), 0);
+            }          
 
-            close(data_socket); // Close the data socket after LIST operation
-            exit(0); 
+            // Close the file pointer
+            pclose(fp);
+            exit(0);
         }
-         if (strcmp(underlying_operation, "RETR") == 0){
+        else if (strcmp(underlying_operation, "RETR") == 0){
             // open file as specified in operand and send to client
 
             FILE *file = fopen(underlying_operand, "rb");   // read in binary mode
@@ -386,7 +345,6 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, connec
             }
 
             fclose(file);
-            close(data_socket);
             exit(0);
 
         }
@@ -405,11 +363,11 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, connec
             }
 
             fclose(file);
-            close(data_socket);
             exit(0);
         }
 
         send(data_socket, buffer, strlen(buffer), 0);
+        close(data_socket);
         exit(0);
     }
     else{   // parent process
@@ -419,8 +377,6 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, connec
 
     return 0;
 }
-
-
 int load_users(char filename[], user users[]){
     FILE* file = fopen(filename, "r");
     if (file == NULL){
@@ -428,7 +384,7 @@ int load_users(char filename[], user users[]){
         return -1;
     }
 
-    char line[MAX_STRING];
+    char line[MAX_BUFFER];
     int user_count = 0;
     while (fgets(line, MAX_BUFFER, file) != NULL) {
         char* token = strtok(line, ",");
@@ -495,29 +451,19 @@ void init_connections(connection connections[], int num_connections){
         connections[i].is_logged_in = false;
         connections[i].is_transfering = false;
         connections[i].username[0] = '\0';
-        strcpy(connections[i].current_directory, "../server"); //Added changes: Start each client in the root directory
+        strcpy(connections[i].working_directory, BASE_DIRECTORY);
     }
-}
-void print_connections(connection connections[], int num_connections){
-    // system("clear");
-    // printf("#\tsd\tport\tcpid\tunumber\tuname\tlogin\ttransfer\n");
-    // for (int i = 0; i < num_connections; i++){
-    //     char is_logged_in = connections[i].is_logged_in ? 'X' : ' ';     
-    //     char is_transfering = connections[i].is_transfering ? 'X' : ' ';
-    //     printf("%d\t%d\t%d\t%d\t%d\t%s\t%c\t%c\n",
-    //         i,
-    //         connections[i].socket_descriptor,
-    //         connections[i].port,
-    //         connections[i].child_pid,
-    //         connections[i].user_number,
-    //         connections[i].username,
-    //         is_logged_in,
-    //         is_transfering
-    //     );
-    // }
 }
 int unsplit_port(char operand[]){
     int h1, h2, h3, h4, p1, p2;
     sscanf(operand, "%d,%d,%d,%d,%d,%d", &h1, &h2, &h3, &h4, &p1, &p2);
     return p1 * 256 + p2;
 }
+bool is_correct_working_directory(char should_be_directory[]){
+    char current_directory[MAX_BUFFER];
+    getcwd(current_directory, sizeof(current_directory));
+    if (strcmp(current_directory, should_be_directory) == 0){
+        return true;
+    }
+    return false;
+}  

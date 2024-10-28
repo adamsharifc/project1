@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#define MAX_STRING 1024
+#define MAX_BUFFER 1024
 
 // Messages
 #define PORT_SUCCESS "200 PORT command successful."
@@ -36,9 +36,7 @@
 
 #define LOCALHOST "127.0.0.1"
 
-char* sys_list(char path[]);
 int sys_cwd(char path[]);
-
 bool directory_exists(const char path[]);
 bool file_exists(const char path[]);
 int get_unix_time();

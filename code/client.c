@@ -147,6 +147,13 @@ int main(int argc, char *argv[]) {
             client_data_port_count++;
             handle_data_command(server_control_socket, client_nplusone, operation, operand);
         }
+        else {
+            // PROBABLY AN INVALID COMMAND, send through control channel
+            send(server_control_socket, command, strlen(command), 0);  // send `command` of size `strlen(command)` to `control_socket` 
+            read(server_control_socket, buffer, MAX_BUFFER);           // read into `buffer` size `MAX_BUFFER` characters from `control_socket`
+            printf("%s\n", buffer);    
+            memset(buffer, 0, MAX_BUFFER);                      // clear buffer
+        }
     }
 
     return 0;

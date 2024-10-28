@@ -4,7 +4,21 @@
 
 #include "client.h"
 
-int main() {
+int main(int argc, char *argv[]) {
+
+    bool is_test_mode = false;
+    char* test_commands[MAX_TEST_LINES] = {0};
+
+    // Check if any arguments were provided
+    if (argc > 1 && strcmp(argv[1], "-t") == 0) {
+        is_test_mode = true;
+        if (argc > 2) {
+            handle_test_mode(test_commands, argv[2]);
+        } else {
+            printf("Error: No file path provided for test mode\n");
+            return -1;
+        }
+    }
 
     int server_control_socket = 0;                     // control socket on the client side manages control channel 
     int client_data_socket = 0;                        // data socket on the client side manages data channel
@@ -67,9 +81,24 @@ int main() {
     printf("%s\n", SERVICE_READY);
 
     // loop indefinitely, break statement => IF statement checking for SERVICE_QUIT message
+    int test_command_index = 0;
     while(true){
-        printf("ftp>");
-        input("", command);
+
+        // if test mode is enabled, run the test script
+        if (is_test_mode == true){
+            if (test_commands[test_command_index] == NULL){
+                printf("End of test script\n");
+                break;
+            }
+            printf("ftp-test> %s\n", test_commands[test_command_index]);
+            strncpy(command, test_commands[test_command_index], MAX_BUFFER);
+            test_command_index++;
+        }
+        else{
+            printf("ftp>");
+            input("", command);
+        }
+
         if (strlen(command) == 0){continue;}
 
         strncpy(buffer, command, MAX_BUFFER);
@@ -364,5 +393,33 @@ bool is_port_available(int port_number){
         close(client_data_socket);
         return true;
     }
+}
+void handle_test_mode(char *test_commands[], char *file_path) {
+    printf("RUNNING IN TEST MODE\n");
+    FILE *file;
+    char line[MAX_BUFFER];
+    int line_count = 0;
 
+    // Open the file for reading
+    file = fopen(file_path, "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        exit(-1);
+    }
+
+    // Read each line and store it in the test_commands array
+    while (fgets(line, MAX_BUFFER, file) != NULL && line_count < MAX_TEST_LINES) {
+        // Remove newline character if present
+        line[strcspn(line, "\n")] = '\0';
+        test_commands[line_count] = strdup(line);
+        if (test_commands[line_count] == NULL) {
+            perror("Error allocating memory");
+            fclose(file);
+            exit(-1);
+        }
+        line_count++;
+    }
+
+    // Close the file
+    fclose(file);
 }

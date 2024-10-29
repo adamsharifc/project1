@@ -226,6 +226,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         conn->user_number = 0;
         conn->is_logged_in = false;
         conn->is_transfering = false;
+        strcpy(conn->working_directory, BASE_DIRECTORY);
         close(client_socket);
     }
     else if (strcmp(operation, "PORT") == 0){

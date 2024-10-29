@@ -14,4 +14,5 @@ int send_underlying_command(int server_control_socket, char operation[], char op
 void input(char* prompt, char* input);
 bool is_port_available(int port_number);
 void handle_test_mode(char *test_commands[], char *file_path);
+int handle_sigterm();
 #endif // CLIENT_H

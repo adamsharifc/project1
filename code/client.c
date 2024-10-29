@@ -117,7 +117,7 @@ int main(int argc, char *argv[]) {
                 }
             }
             else if (strcmp(operation, "!LIST") == 0){  // LIST WORKING DIRECTORY CONTENTS
-                system("ls");   
+                system("ls");   fflush(stdout);
             }
             else{
                 printf("%s\n", INVALID_COMMAND);
@@ -135,6 +135,10 @@ int main(int argc, char *argv[]) {
             
             // Terminate after server replies with SERVICE_QUIT message
             if (strcmp(buffer, SERVICE_QUIT) == 0){             // ONLY WAY TO EXIT LOOP
+                // close sockets
+                close(server_control_socket);
+                close(client_data_socket);
+                exit(0);
                 break;
             }
             memset(buffer, 0, MAX_BUFFER);                      // clear buffer
@@ -184,154 +188,137 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
     struct sockaddr_in client_data_address;
     struct sockaddr_in server_data_address;
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("Error: Failed to fork");
+    // Create client data socket
+    if ((client_data_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        printf("Error: Failed to create socket\n");
         exit(1);
-    } else if (pid == 0) { // Child process
-        
-        // Create client data socket
-        if ((client_data_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-            printf("Error: Failed to create socket\n");
-            exit(1);
-        }
-        
-        // Set up client address
-        client_data_address.sin_family = AF_INET;
-        client_data_address.sin_addr.s_addr = INADDR_ANY; // Bind to any available interface
-        client_data_address.sin_port = htons(client_nplusone); // Bind to client_nplusone
-
-        // Bind the socket to the client address
-        if (bind(client_data_socket, (struct sockaddr *)&client_data_address, sizeof(client_data_address)) < 0) {
-            printf("Error: Failed to bind socket, collision already using %d\n", client_nplusone);
-            exit(1);
-        }
-
-        // Create server data address
-        server_data_address.sin_family = AF_INET;
-        server_data_address.sin_port = htons(DATA_PORT);
-
-        // Convert IPv4 and IPv6 addresses from text to binary form
-        if (inet_pton(AF_INET, LOCALHOST, &server_data_address.sin_addr) <= 0) {
-            printf("Error: Invalid IP address \n");
-            exit(1);
-        }
-
-        // Listen for incoming connections
-        if (listen(client_data_socket, 1) < 0) {
-            printf("Error: Failed to listen on data socket\n");
-            exit(1);
-        }
-
-        // ABOVE THIS EVERYTHING IS THE SAME FOR ANY PORT COMMAND
-        // BELOW THIS EVERYTHING IS DIFFERENT FOR EACH PORT COMMAND
-
-        if (strcmp(operation, "RETR") == 0){    // retrieve a file from the server, create a file and write data to it from the server
-            // Ensure operand is not NULL
-            if (operand == NULL) {
-                printf("Error: No filename specified for RETR command\n");
-                close(client_data_socket);
-                exit(1);
-            }
-
-            // Open the file for writing
-            FILE *file = fopen(operand, "wb");  // write in binary mode
-            if (file == NULL) {
-                printf("Error: Failed to open file %s for writing\n", operand);
-                close(client_data_socket);
-                exit(1);
-            }
-
-            // Accept the incoming connection from the server
-            int incoming_socket;
-            struct sockaddr_in incoming_addr;
-            socklen_t incoming_addr_len = sizeof(incoming_addr);
-            if ((incoming_socket = accept(client_data_socket, (struct sockaddr *)&incoming_addr, &incoming_addr_len)) < 0) {
-                printf("Error: Failed to accept incoming connection\n");
-                fclose(file);
-                close(client_data_socket);
-                exit(1);
-            }
-
-            memset(buffer, 0, MAX_BUFFER);      // clear buffer
-            int bytes_received;
-            while ((bytes_received = recv(incoming_socket, buffer, MAX_BUFFER, 0)) > 0) {   // keep receiving data from server. until bytes_received is 0
-                fwrite(buffer, 1, bytes_received, file); // Write the received data to the file
-            }
-
-            if (bytes_received < 0) {
-                printf("Error: Failed to receive data from server\n");
-            } else {
-                printf("\nFile transfer completed. Connection closed by server.\n");
-            }
-
-            fclose(file);
-            close(incoming_socket);
-            close(client_data_socket);
-            exit(0); // Exit the child process   
-        }
-        else if (strcmp(operation, "LIST") == 0){       // list files in the server working directory
-            // Accept the incoming connection from the server
-            int incoming_socket;
-            struct sockaddr_in incoming_addr;
-            socklen_t incoming_addr_len = sizeof(incoming_addr);
-            if ((incoming_socket = accept(client_data_socket, (struct sockaddr *)&incoming_addr, &incoming_addr_len)) < 0) {
-                printf("Error: Failed to accept incoming connection\n");
-                close(client_data_socket);
-                exit(1);
-            }
-            // Receive the file listing from the server
-            memset(buffer, 0, MAX_BUFFER);              // clear buffer
-            int bytes_received;
-            printf("\n"); fflush(stdout);
-            while ((bytes_received = recv(incoming_socket, buffer, MAX_BUFFER, 0)) > 0) {
-                printf("%s", buffer); // Print the received data
-                memset(buffer, 0, MAX_BUFFER);          // clear buffer
-            }
-            fflush(stdout);     // force flush to stdout, to avoid inconsistency in printing order when there are tests where fast iteration thorugh commands may cause problems
-            if (bytes_received < 0) {
-                printf("Error: Failed to receive data from server\n");
-            }
-
-            close(incoming_socket);
-            close(client_data_socket);
-            exit(0); // Exit the child process
-        }
-        else if (strcmp(operation, "STOR") == 0){           // store a file on the server, read a file and send data to the server until EOF
-            // Accept the incoming connection from the server
-            int incoming_socket;
-            struct sockaddr_in incoming_addr;
-            socklen_t incoming_addr_len = sizeof(incoming_addr);
-            if ((incoming_socket = accept(client_data_socket, (struct sockaddr *)&incoming_addr, &incoming_addr_len)) < 0) {
-                printf("Error: Failed to accept incoming connection\n");
-                close(client_data_socket);
-                exit(1);
-            }
-            // Send the file to the server
-            FILE *file = fopen(operand, "rb");  // read in binary mode, `r` mode may cause data loss
-            if (file == NULL) {
-                printf("Error: Failed to open file %s for reading\n", operand);
-                close(client_data_socket);
-                exit(1);
-            }
-            char buffer[MAX_BUFFER];
-            int bytes_sent;
-            while ((bytes_sent = fread(buffer, 1, MAX_BUFFER, file)) > 0) {     // keep reading data from file until bytes_sent is 0
-                send(incoming_socket, buffer, bytes_sent, 0);
-            }
-            fclose(file);
-            close(incoming_socket);
-            close(client_data_socket);
-            exit(0); // Exit the child process
-        }
-    } 
-
-    else {    // parent process
-        // does NOT WAIT for the child process to finish
-        // as this will PREVENT the server from accepting new connections
-        
     }
-}
+    
+    // Set up client address
+    client_data_address.sin_family = AF_INET;
+    client_data_address.sin_addr.s_addr = INADDR_ANY; // Bind to any available interface
+    client_data_address.sin_port = htons(client_nplusone); // Bind to client_nplusone
+
+    // Bind the socket to the client address
+    if (bind(client_data_socket, (struct sockaddr *)&client_data_address, sizeof(client_data_address)) < 0) {
+        printf("Error: Failed to bind socket, collision already using %d\n", client_nplusone);
+        exit(1);
+    }
+
+    // Create server data address
+    server_data_address.sin_family = AF_INET;
+    server_data_address.sin_port = htons(DATA_PORT);
+
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if (inet_pton(AF_INET, LOCALHOST, &server_data_address.sin_addr) <= 0) {
+        printf("Error: Invalid IP address \n");
+        exit(1);
+    }
+
+    // Listen for incoming connections
+    if (listen(client_data_socket, 1) < 0) {
+        printf("Error: Failed to listen on data socket\n");
+        exit(1);
+    }
+
+    // ABOVE THIS EVERYTHING IS THE SAME FOR ANY PORT COMMAND
+    // BELOW THIS EVERYTHING IS DIFFERENT FOR EACH PORT COMMAND
+
+    if (strcmp(operation, "RETR") == 0){    // retrieve a file from the server, create a file and write data to it from the server
+        // Ensure operand is not NULL
+        if (operand == NULL) {
+            printf("Error: No filename specified for RETR command\n");
+            close(client_data_socket);
+            exit(1);
+        }
+
+        // Open the file for writing
+        FILE *file = fopen(operand, "wb");  // write in binary mode
+        if (file == NULL) {
+            printf("Error: Failed to open file %s for writing\n", operand);
+            close(client_data_socket);
+            exit(1);
+        }
+
+        // Accept the incoming connection from the server
+        int incoming_socket;
+        struct sockaddr_in incoming_addr;
+        socklen_t incoming_addr_len = sizeof(incoming_addr);
+        if ((incoming_socket = accept(client_data_socket, (struct sockaddr *)&incoming_addr, &incoming_addr_len)) < 0) {
+            printf("Error: Failed to accept incoming connection\n");
+            fclose(file);
+            close(client_data_socket);
+            exit(1);
+        }
+
+        memset(buffer, 0, MAX_BUFFER);      // clear buffer
+        int bytes_received;
+        while ((bytes_received = recv(incoming_socket, buffer, MAX_BUFFER, 0)) > 0) {   // keep receiving data from server. until bytes_received is 0
+            fwrite(buffer, 1, bytes_received, file); // Write the received data to the file
+        }
+
+        if (bytes_received < 0) {
+            printf("Error: Failed to receive data from server\n");
+        } else {
+            printf("\nFile transfer completed. Connection closed by server.\n");
+        }
+
+        fclose(file);
+        close(incoming_socket);
+        close(client_data_socket);
+    }
+    else if (strcmp(operation, "LIST") == 0){       // list files in the server working directory
+        // Accept the incoming connection from the server
+        int incoming_socket;
+        struct sockaddr_in incoming_addr;
+        socklen_t incoming_addr_len = sizeof(incoming_addr);
+        if ((incoming_socket = accept(client_data_socket, (struct sockaddr *)&incoming_addr, &incoming_addr_len)) < 0) {
+            printf("Error: Failed to accept incoming connection\n");
+            close(client_data_socket);
+            exit(1);
+        }
+        // Receive the file listing from the server
+        memset(buffer, 0, MAX_BUFFER);              // clear buffer
+        int bytes_received;
+        while ((bytes_received = recv(incoming_socket, buffer, MAX_BUFFER, 0)) > 0) {
+            printf("%s", buffer); // Print the received data
+            memset(buffer, 0, MAX_BUFFER);          // clear buffer
+        }
+        fflush(stdout);     // force flush to stdout, to avoid inconsistency in printing order when there are tests where fast iteration thorugh commands may cause problems
+        if (bytes_received < 0) {
+            printf("Error: Failed to receive data from server\n");
+        }
+
+        close(incoming_socket);
+        close(client_data_socket);
+    }
+    else if (strcmp(operation, "STOR") == 0){           // store a file on the server, read a file and send data to the server until EOF
+        // Accept the incoming connection from the server
+        int incoming_socket;
+        struct sockaddr_in incoming_addr;
+        socklen_t incoming_addr_len = sizeof(incoming_addr);
+        if ((incoming_socket = accept(client_data_socket, (struct sockaddr *)&incoming_addr, &incoming_addr_len)) < 0) {
+            printf("Error: Failed to accept incoming connection\n");
+            close(client_data_socket);
+            exit(1);
+        }
+        // Send the file to the server
+        FILE *file = fopen(operand, "rb");  // read in binary mode, `r` mode may cause data loss
+        if (file == NULL) {
+            printf("Error: Failed to open file %s for reading\n", operand);
+            close(client_data_socket);
+            exit(1);
+        }
+        char buffer[MAX_BUFFER];
+        int bytes_sent;
+        while ((bytes_sent = fread(buffer, 1, MAX_BUFFER, file)) > 0) {     // keep reading data from file until bytes_sent is 0
+            send(incoming_socket, buffer, bytes_sent, 0);
+        }
+        fclose(file);
+        close(incoming_socket);
+        close(client_data_socket);
+    }
+} 
 
 // Send PORT command to server, 
 int send_port_command(char host_address[], int tcp_port_address, int server_control_socket){

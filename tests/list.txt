@@ -1,4 +1,5 @@
 USER bob
 PASS donuts
 LIST
+!LIST
 QUIT

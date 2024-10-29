@@ -3,4 +3,5 @@ PASS donuts
 !PWD
 CWD bob
 STOR friends.pdf
+STOR hello.txt
 QUIT

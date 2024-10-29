@@ -1,7 +1,7 @@
-USER bob
-PASS donuts
+USER ron
+PASS 123
 PWD
-CWD bob
+CWD ron
 PWD
 !PWD
 !CWD test

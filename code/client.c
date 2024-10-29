@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
     }
 
     // CONNECTED
-    // printf("%s%s\n%s\n", INIT_PROMPT, COMMAND_LIST, SERVICE_READY);
+    printf("%s%s\n%s\n", INIT_PROMPT, COMMAND_LIST, SERVICE_READY);
     printf("%s\n", SERVICE_READY);
 
     // loop indefinitely, break statement => IF statement checking for SERVICE_QUIT message
@@ -168,20 +168,6 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
     while(is_port_available(client_nplusone) == false){
         client_nplusone++;
     }
-    // Send PORT command to server
-    int port_command_result = send_port_command(LOCALHOST, client_nplusone, server_control_socket);
-    if (port_command_result != 0){
-        printf("Error: Failed to send PORT command\n");
-        return;
-    }
-    // At this point the Server replies with: "200 PORT command successful."
-    // Send underlying command to server either of LIST, RETR, STOR 
-    int underlying_command_result = send_underlying_command(server_control_socket, operation, operand);
-    if (underlying_command_result != 0){
-        printf("Error: Failed to send underlying command\n");
-        return;
-    }
-    // At this point the Server replies with "150 File status okay; about to open data connection."
 
     char buffer[MAX_BUFFER];
     int client_data_socket;
@@ -205,6 +191,26 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
         exit(1);
     }
 
+    // Send PORT command to server
+    int port_command_result = send_port_command(LOCALHOST, client_nplusone, server_control_socket);
+    if (port_command_result != 0){
+        printf("Error: Failed to send PORT command\n");
+        return;
+    }
+    // At this point the Server replies with: "200 PORT command successful."
+    // Send underlying command to server either of LIST, RETR, STOR 
+    int underlying_command_result = send_underlying_command(server_control_socket, operation, operand);
+    if (underlying_command_result != 0){
+        if (underlying_command_result == 1){  // if invalid resource message is receievd its already been printed, so dont print another error but dont proceed further either
+            close(client_data_socket);
+            return;
+        }
+        printf("Error: Failed to send underlying command\n");
+        close(client_data_socket);
+        return;
+    }
+
+    // At this point the Server replies with "150 File status okay; about to open data connection."
     // Create server data address
     server_data_address.sin_family = AF_INET;
     server_data_address.sin_port = htons(DATA_PORT);
@@ -232,8 +238,13 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
             exit(1);
         }
 
+        srand(time(0));   
+        int random_number = rand();
+        char temp_filename[MAX_BUFFER];
+        sprintf(temp_filename, "%d.temp", random_number);
+
         // Open the file for writing
-        FILE *file = fopen(operand, "wb");  // write in binary mode
+        FILE *file = fopen(temp_filename, "wb");  // write in binary mode
         if (file == NULL) {
             printf("Error: Failed to open file %s for writing\n", operand);
             close(client_data_socket);
@@ -264,6 +275,12 @@ void handle_data_command(int server_control_socket, int client_nplusone, char op
         }
 
         fclose(file);
+
+        // Rename the temporary file to the correct filename
+        if (rename(temp_filename, operand) != 0) {
+            printf("Error: Failed to rename file\n");
+        }
+
         close(incoming_socket);
         close(client_data_socket);
     }
@@ -349,8 +366,11 @@ int send_underlying_command(int server_control_socket, char operation[], char op
     memset(buffer, 0, MAX_BUFFER);      // clear buffer for reading
     read(server_control_socket, buffer, MAX_BUFFER);
     printf("%s\n", buffer);                     // print response
-    if (strcmp(buffer, TRANSFER_READY) == 0) {  // if server replies with "150 File status okay; about to open data connection."
+    if (strcmp(buffer, TRANSFER_READY) == 0) {  // if server replies with "150 File status okay; about to open data connection.", 
         return 0;
+    }
+    else if (strcmp(buffer, INVALID_RESOURCE) == 0){    // if invalid resource message is receievd its already been printed, so dont print another error but dont proceed further either
+        return 1;
     }
     return -1;
 }

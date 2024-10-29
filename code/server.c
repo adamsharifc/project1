@@ -142,7 +142,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
     char* operand;                  // the operand for the operation e.g users || gryffindor.jpg
     int read_size;                  // the size of the buffer
     
-    printf("%d: %s\n", conn->port, command);
+    // printf("%d: %s\n", conn->port, command);
     fflush(stdout); // force print to stdout
 
     // split command into operation and operand
@@ -189,6 +189,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
             strncpy(conn->username, operand, sizeof(conn->username) - 1);  
             conn->username[sizeof(conn->username) - 1] = '\0'; // Ensure null-termination
             send(client_socket, USER_SUCCESS, strlen(USER_SUCCESS), 0);
+            printf("Successful username verification\n"); fflush(stdout);
         } else {
             send(client_socket, USER_FAIL, strlen(USER_FAIL), 0);
         }   
@@ -197,6 +198,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         if (authenticate_user(conn->username, operand, users, user_count)){
             conn->is_logged_in = true;
             send(client_socket, PASS_SUCCESS, strlen(PASS_SUCCESS), 0);
+            printf("Successful login\n");   fflush(stdout);
         } else {
             conn->is_logged_in = false;
             send(client_socket, PASS_FAIL, strlen(PASS_FAIL), 0);
@@ -207,6 +209,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         send(client_socket, buffer, strlen(buffer), 0);
     }
     else if (strcmp(operation, "CWD") == 0){
+        printf("Changing directory to: %s\n", operand);
         if (sys_cwd(operand) == 0){     // if working directory is changed successfully, see implementation in common.c
             getcwd(buffer, MAX_BUFFER);     // copy current working directory to buffer
             strcpy(conn->working_directory, buffer);    // copy buffer to connection working directory
@@ -218,7 +221,6 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
     }
     else if (strcmp(operation, "QUIT") == 0){
         send(client_socket, SERVICE_QUIT, strlen(SERVICE_QUIT), 0);
-        printf("Closed %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
         conn->socket_descriptor = 0;    // mark as free slot
         conn->port = 0;
         conn->child_pid = 0;
@@ -228,6 +230,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
         conn->is_transfering = false;
         strcpy(conn->working_directory, BASE_DIRECTORY);
         close(client_socket);
+        printf("Closed!\n");
     }
     else if (strcmp(operation, "PORT") == 0){
         // handle_port_command(client_socket, client_addr, operand);
@@ -240,6 +243,7 @@ void handle_client(int client_socket, struct sockaddr_in client_addr, connection
 
 int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* operand){
     
+    printf("PORT received: %s\n", operand); fflush(stdout);
     // server reads the port requst and extracts the client_plusone port for data transfer
     int client_plusone = unsplit_port(operand);
 
@@ -254,7 +258,16 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
     char* underlying_operation = strtok(buffer, " ");
     char* underlying_operand = strtok(NULL, " ");
     
+
+    if (strcmp(underlying_operation, "RETR") == 0 || strcmp(underlying_operation, "STOR") == 0){
+        if (!file_exists(underlying_operand) && !directory_exists(underlying_operand)){
+            send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
+            return -1;
+        }
+    }
+
     // server replies with file status okay "150 File status okay; about to open data connection."
+    printf("File okay, beginning data connections\n"); fflush(stdout);
     send(client_socket, TRANSFER_READY, strlen(TRANSFER_READY), 0);
 
     // server forks a child process to handle the data transfer
@@ -294,12 +307,13 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
             exit(1);
         }
 
+        printf("Connecting to Client Transfer Socket...\n");
         // Connect to client N + 1
         int attempt_count = 0;
         while(connect(data_socket, (struct sockaddr*)&client_data_addr, sizeof(client_data_addr)) != 0){
             attempt_count++;
         }
-
+        printf("Connection Successful\n");
         // CONNECTED
         // ABOVE CODE IS SAME FOR LIST RETR AND STOR
         // BELOW CODE IS DIFFERENT FOR LIST RETR AND STOR
@@ -309,6 +323,7 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
         char buffer[MAX_BUFFER];
         memset(buffer, 0, MAX_BUFFER);
         if (strcmp(underlying_operation, "LIST") == 0){
+            printf("Listing directory\n");
             FILE *fp;
             char line[MAX_BUFFER];
             buffer[0] = '\0';
@@ -327,6 +342,7 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
 
             // Close the file pointer
             pclose(fp);
+            printf("%s\n", TRANSFER_COMPLETE);
             exit(0);
         }
         else if (strcmp(underlying_operation, "RETR") == 0){
@@ -346,13 +362,19 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
             }
 
             fclose(file);
+            printf("%s\n", TRANSFER_COMPLETE);
             exit(0);
 
         }
         else if (strcmp(underlying_operation, "STOR") == 0){
             // receive file from client and save it to server
 
-            FILE *file = fopen(underlying_operand, "wb");   // write in binary mode
+            srand(time(0));
+            int random_number = rand();
+            char temp_filename[MAX_BUFFER];
+            sprintf(temp_filename, "%d.temp", random_number);
+            
+            FILE *file = fopen(temp_filename, "wb");   // write in binary mode
             if (file == NULL){
                 perror("Error: Cannot open file");
                 exit(1);
@@ -364,10 +386,15 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
             }
 
             fclose(file);
+            if (rename(temp_filename, underlying_operand) != 0){
+                printf("Error: Cannot rename file\n");
+                exit(1);
+            }
+            printf("%s\n", TRANSFER_COMPLETE);
             exit(0);
         }
 
-        send(data_socket, buffer, strlen(buffer), 0);
+        send(client_socket, TRANSFER_COMPLETE, strlen(TRANSFER_COMPLETE), 0);
         close(data_socket);
         exit(0);
     }

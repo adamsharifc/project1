@@ -31,8 +31,8 @@
 #define INVALID_SEQUENCE "503 Bad sequence of commands."
 
 // CHANGE PORT NUMBER TO 21 AND 20
-#define CONTROL_PORT 2021
-#define DATA_PORT 2020
+#define CONTROL_PORT 21
+#define DATA_PORT 20
 
 #define LOCALHOST "127.0.0.1"
 

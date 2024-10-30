@@ -259,7 +259,7 @@ int serve_port_command(int client_socket, struct sockaddr_in client_addr, char* 
     char* underlying_operand = strtok(NULL, " ");
     
 
-    if (strcmp(underlying_operation, "RETR") == 0 || strcmp(underlying_operation, "STOR") == 0){
+    if (strcmp(underlying_operation, "RETR") == 0){
         if (!file_exists(underlying_operand) && !directory_exists(underlying_operand)){
             send(client_socket, INVALID_RESOURCE, strlen(INVALID_RESOURCE), 0);
             return -1;
